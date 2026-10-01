@@ -16,15 +16,25 @@ export function createApp({ database, tokenSecret = process.env.AUTH_TOKEN_SECRE
   app.locals.tokenSecret = tokenSecret || 'development-only-secret-change-before-deploying'
   app.use(express.json({ limit: '256kb' }))
   app.use((request, response, next) => {
-    const allowedOrigins = (process.env.WEB_ORIGIN || 'https://timetable-allocation.vercel.app,http://localhost:5173').split(',').map((origin) => origin.trim())
+    const rawOrigins = process.env.WEB_ORIGIN || '*'
+    const allowedOrigins = rawOrigins.split(',').map((o) => o.trim().replace(/\/$/, ''))
     const origin = request.get('origin')
-    if (origin && (allowedOrigins.includes(origin) || allowedOrigins.includes('*'))) {
-      response.set('Access-Control-Allow-Origin', allowedOrigins.includes('*') ? '*' : origin)
+
+    if (origin) {
+      const cleanOrigin = origin.replace(/\/$/, '')
+      const isAllowed = allowedOrigins.includes('*') || allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes(origin)
+      response.set('Access-Control-Allow-Origin', isAllowed ? origin : (allowedOrigins[0] || '*'))
       response.set('Vary', 'Origin')
-      response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-      response.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
+      response.set('Access-Control-Allow-Credentials', 'true')
+      response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept, X-Requested-With')
+      response.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+    } else {
+      response.set('Access-Control-Allow-Origin', '*')
     }
-    if (request.method === 'OPTIONS') return response.sendStatus(204)
+
+    if (request.method === 'OPTIONS') {
+      return response.sendStatus(204)
+    }
     next()
   })
 
