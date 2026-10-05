@@ -142,6 +142,7 @@ export async function initializeDatabase(database) {
     database.collection('conflicts').createIndex({ status: 1, departmentId: 1 }),
     database.collection('audit_logs').createIndex({ id: -1 }),
     database.collection('notifications').createIndex({ userId: 1, createdAt: -1 }),
+    database.collection('leave_requests').createIndex({ facultyId: 1, createdAt: -1 }),
     database.collection('users').createIndex({ role: 1, 'availableSlots.day': 1 }),
     database.collection('users').createIndex({ role: 1, 'unavailableSlots.day': 1 }),
     database.collection('time_slots').createIndex({ day: 1, sequence: 1, status: 1 }),

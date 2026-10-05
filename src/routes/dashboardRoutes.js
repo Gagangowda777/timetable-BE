@@ -5,6 +5,8 @@ import {
 	notifications,
 	timetable,
 	facultyWorkload,
+	facultyLeaveRequests,
+	createFacultyLeave,
 } from '../controllers/dashboardController.js'
 import { authenticate, authorize } from '../middleware/authMiddleware.js'
 
@@ -16,5 +18,7 @@ router.get('/workload', authorize('faculty'), facultyWorkload)
 router.get('/notifications', authorize('student'), notifications)
 router.get('/change-requests', authorize('faculty'), facultyChangeRequests)
 router.post('/change-requests', authorize('faculty'), createFacultyChange)
+router.get('/leave-requests', authorize('faculty'), facultyLeaveRequests)
+router.post('/leave-requests', authorize('faculty'), createFacultyLeave)
 
 export default router

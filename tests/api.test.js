@@ -230,6 +230,39 @@ test('allows faculty to request a class change and admins to review it', async (
   assert.equal(reviewed.data.status, 'Approved')
 })
 
+test('allows faculty to request leave and view their own requests', async () => {
+  const faculty = await signIn('faculty@demo.edu')
+  const submitted = await request('/dashboard/leave-requests', {
+    method: 'POST',
+    token: faculty.token,
+    body: { leaveType: 'Casual Leave', startDate: '2026-04-06', endDate: '2026-04-08', reason: 'Family function' },
+  })
+  assert.equal(submitted.response.status, 201)
+  assert.equal(submitted.data.status, 'Pending')
+  assert.equal(submitted.data.numberOfDays, 3)
+
+  const invalidType = await request('/dashboard/leave-requests', {
+    method: 'POST',
+    token: faculty.token,
+    body: { leaveType: 'Vacation', startDate: '2026-04-06', endDate: '2026-04-08', reason: 'Not a valid type' },
+  })
+  assert.equal(invalidType.response.status, 400)
+
+  const invalidRange = await request('/dashboard/leave-requests', {
+    method: 'POST',
+    token: faculty.token,
+    body: { leaveType: 'Sick Leave', startDate: '2026-04-08', endDate: '2026-04-06', reason: 'Reversed dates' },
+  })
+  assert.equal(invalidRange.response.status, 400)
+
+  const ownRequests = await request('/dashboard/leave-requests', { token: faculty.token })
+  assert.ok(ownRequests.data.some((item) => item.id === submitted.data.id))
+
+  const student = await signIn('student@demo.edu')
+  const denied = await request('/dashboard/leave-requests', { method: 'POST', token: student.token, body: {} })
+  assert.equal(denied.response.status, 403)
+})
+
 test('creates a conflict-free schedule and enforces approval transitions', async () => {
   const student = await signIn('student@demo.edu')
   const departmentAdmin = await signIn('department.admin@demo.edu')
