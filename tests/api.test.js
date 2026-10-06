@@ -407,6 +407,61 @@ test('creates a conflict-free schedule and enforces approval transitions', async
   assert.equal(crossDepartmentConflict.response.status, 403)
 })
 
+test('auto-fixes clashing classes when an admin resolves a conflict', async () => {
+  const departmentAdmin = await signIn('department.admin@demo.edu')
+  const department = await database.collection('departments').findOne({ name: 'Computer Science' })
+  const program = await database.collection('programs').findOne({ departmentId: department.id, status: 'Active' })
+  const [facultyA, facultyB, room] = await Promise.all([
+    database.collection('users').findOne({ email: 'faculty@demo.edu' }),
+    database.collection('users').findOne({ email: 'bello@demo.edu' }),
+    database.collection('rooms').findOne({ code: 'CL-101' }),
+  ])
+  const scheduleIds = []
+  const fixtures = [
+    { subject: 'AutoFix Lecture', code: 'AF101', facultyId: facultyA.id, cohort: 'AutoFix Group A' },
+    { subject: 'AutoFix Lab', code: 'AF102', facultyId: facultyB.id, cohort: 'AutoFix Group B' },
+  ]
+  for (const fixture of fixtures) {
+    const id = await nextId(database, 'schedules')
+    scheduleIds.push(id)
+    await database.collection('schedules').insertOne({
+      id, departmentId: department.id, programId: program.id, day: 'Friday', start: '15:00', end: '16:00',
+      subject: fixture.subject, code: fixture.code, facultyId: fixture.facultyId, roomId: room.id,
+      cohort: fixture.cohort, status: 'Draft', createdBy: null,
+    })
+  }
+  const conflictId = await nextId(database, 'conflicts')
+  await database.collection('conflicts').insertOne({
+    id: conflictId, type: 'Room overlap', day: 'Friday', start: '15:00', end: '16:00',
+    detail: `${room.name} is assigned to two classes simultaneously.`,
+    schedules: 'AutoFix Lecture · AutoFix Lab', departmentId: department.id, isCrossDepartment: false, status: 'Open',
+  })
+
+  const resolved = await request(`/admin/conflicts/${conflictId}/resolve`, {
+    method: 'PATCH', token: departmentAdmin.token,
+  })
+  assert.equal(resolved.response.status, 200, JSON.stringify(resolved.data))
+  assert.equal(resolved.data.status, 'Resolved')
+  assert.equal(resolved.data.autoFixed, true)
+  assert.ok(resolved.data.message.length > 0)
+
+  const conflict = await database.collection('conflicts').findOne({ id: conflictId })
+  assert.equal(conflict.status, 'Resolved')
+  assert.equal(conflict.resolutionAction, 'room')
+  const updated = await database.collection('schedules').find({ id: { $in: scheduleIds } }).toArray()
+  const changed = updated.filter((item) => item.roomId !== room.id || item.day !== 'Friday' || item.start !== '15:00' || item.facultyId !== fixtures.find((f) => f.subject === item.subject).facultyId)
+  assert.equal(changed.length, 1, `expected exactly one schedule to change: ${JSON.stringify(updated)}`)
+  const remainingClash = await database.collection('schedules').countDocuments({
+    day: 'Friday', roomId: room.id, start: { $lt: '16:00' }, end: { $gt: '15:00' },
+  })
+  assert.equal(remainingClash, 1, 'the original room must no longer hold two classes')
+  const validation = await validateTimetableEntry(database, changed[0], { excludeEntryId: changed[0].id })
+  assert.equal(validation.conflict, false, JSON.stringify(validation.conflicts))
+
+  await database.collection('schedules').deleteMany({ id: { $in: scheduleIds } })
+  await database.collection('conflicts').deleteOne({ id: conflictId })
+})
+
 test('rejects overlapping time slots without changing the saved calendar', async () => {
   const academicAdmin = await signIn('academic.admin@demo.edu')
   const before = await request('/admin/calendar', { token: academicAdmin.token })

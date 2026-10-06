@@ -11,13 +11,13 @@ import {
   updateManualTimetableEntry,
   deleteManualTimetableEntry,
   getScheduleReport,
-  resolveScheduleConflict,
   saveAcademicCalendar,
   setFacultyAvailability,
   setScheduleStatus,
 } from '../models/adminModel.js'
 import { getAdminChangeRequests, reviewFacultyChangeRequest } from '../models/changeRequestModel.js'
 import { generateManualTimetable } from '../services/timetableGenerationService.js'
+import { resolveScheduleConflict } from '../services/conflictResolutionService.js'
 import { getFacultyWorkload, getFacultyWorkloadReport } from '../models/workloadModel.js'
 import { HttpError } from '../utils/httpError.js'
 

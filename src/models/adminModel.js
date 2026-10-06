@@ -707,17 +707,6 @@ export async function setFacultyAvailability(database, user, facultyId, availabl
   return { id: faculty.id, available }
 }
 
-export async function resolveScheduleConflict(database, user, conflictId) {
-  const conflict = await database.collection('conflicts').findOne(byId(conflictId))
-  if (!conflict) throw new HttpError(404, 'Conflict not found.')
-  if (user.role === 'department-admin' && (conflict.isCrossDepartment || conflict.departmentId !== user.departmentId)) {
-    throw new HttpError(403, 'Cross-department conflicts must be resolved by an Academic Admin.')
-  }
-  await database.collection('conflicts').updateOne({ id: conflict.id, status: 'Open' }, { $set: { status: 'Resolved' } })
-  if (conflict.status === 'Open') await writeAudit(database, { actorId: user.id, actorName: user.name, action: 'Resolved scheduling conflict', target: conflict.type, details: conflict.detail })
-  return { id: conflict.id, status: 'Resolved' }
-}
-
 export async function getCalendarData(database) {
   const [workingDays, timeSlots] = await Promise.all([
     database.collection('working_days').find({ enabled: true }).sort({ order: 1 }).toArray(),
