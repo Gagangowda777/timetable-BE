@@ -156,6 +156,7 @@ export async function initializeDatabase(database) {
   await ensureAcademicStructure(database)
   await ensureFacultyProfiles(database)
   await ensureTimeSlots(database)
+  await ensureManualTimetableStructure(database)
   return database
 }
 
@@ -225,6 +226,83 @@ async function ensureFacultyProfiles(database) {
     if (!Array.isArray(item.unavailableSlots)) updates.unavailableSlots = []
     if (!Array.isArray(item.preferredSlots)) updates.preferredSlots = []
     if (Object.keys(updates).length) await database.collection('users').updateOne({ id: item.id }, { $set: updates })
+  }
+}
+
+async function ensureManualTimetableStructure(database) {
+  // Seed a demo academic hierarchy (batch/semester/section/subjects) so the Manual
+  // Timetable workflow — validate and generate draft — works on a fresh database.
+  const [existingBatches, existingSemesters, existingSections, existingSubjects] = await Promise.all([
+    database.collection('batches').countDocuments(),
+    database.collection('semesters').countDocuments(),
+    database.collection('sections').countDocuments(),
+    database.collection('subjects').countDocuments(),
+  ])
+  if (existingBatches || existingSemesters || existingSections || existingSubjects) return
+
+  const academicYear = await database.collection('academic_years').findOne({ status: 'Active' }, { sort: { id: 1 } })
+  if (!academicYear) return
+  const [departments, programs, classSlots] = await Promise.all([
+    database.collection('departments').find({ status: 'Active' }).toArray(),
+    database.collection('programs').find({ status: 'Active' }).toArray(),
+    database.collection('time_slots').find({ type: 'CLASS', status: 'Active' }).toArray(),
+  ])
+  if (!departments.length || !programs.length || !classSlots.length) return
+
+  const toMinutes = (value) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
+  const durations = [...new Set(classSlots
+    .map((slot) => toMinutes(slot.end) - toMinutes(slot.start))
+    .filter((value) => Number.isFinite(value) && value > 0))]
+  if (!durations.length) return
+
+  // Smallest whole-hour weekly load the configured slot grid can fill exactly
+  // (60-minute grid -> 1h, 75-minute grid -> 5h).
+  let weeklyHours = 0
+  for (let hours = 1; hours <= 40 && !weeklyHours; hours += 1) {
+    const target = hours * 60
+    const reachable = new Set([0])
+    for (let total = 1; total <= target; total += 1) {
+      for (const duration of durations) {
+        if (total >= duration && reachable.has(total - duration)) {
+          reachable.add(total)
+          break
+        }
+      }
+    }
+    if (reachable.has(target)) weeklyHours = hours
+  }
+  if (!weeklyHours) return
+  const subjectCount = weeklyHours <= 2 ? 2 : 1
+  const departmentsById = new Map(departments.map((item) => [item.id, item]))
+
+  for (const program of programs) {
+    const department = departmentsById.get(program.departmentId)
+    if (!department || !(department.academicYearIds || []).includes(academicYear.id)) continue
+    const batchId = await nextId(database, 'batches')
+    await database.collection('batches').insertOne({
+      id: batchId, name: 'Year 1', code: 'Y1', academicYearId: academicYear.id,
+      departmentId: department.id, programId: program.id, status: 'Active', createdAt: new Date(),
+    })
+    const semesterId = await nextId(database, 'semesters')
+    await database.collection('semesters').insertOne({
+      id: semesterId, name: 'First Semester', batchId, startDate: '', endDate: '',
+      status: 'Active', createdAt: new Date(),
+    })
+    const sectionId = await nextId(database, 'sections')
+    await database.collection('sections').insertOne({
+      id: sectionId, name: 'Section A', code: 'A', semesterId, status: 'Active', createdAt: new Date(),
+    })
+    for (let index = 1; index <= subjectCount; index += 1) {
+      const subjectId = await nextId(database, 'subjects')
+      await database.collection('subjects').insertOne({
+        id: subjectId, code: `${program.code} 10${index}`,
+        name: index === 1 ? `${program.name} Foundations` : `${program.name} Applications`,
+        credits: 3, type: 'Core', academicYearId: academicYear.id, departmentId: department.id,
+        programId: program.id, batchId, semesterId,
+        weeklyHours, theoryHours: weeklyHours, practicalHours: 0,
+        facultyId: null, requiresLab: false, status: 'Active', createdAt: new Date(),
+      })
+    }
   }
 }
 
