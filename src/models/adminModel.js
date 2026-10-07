@@ -731,7 +731,7 @@ function validateCalendarSlots(inputSlots) {
     if (!slotTypes.has(slot.type)) throw new HttpError(400, 'Choose CLASS, BREAK, or LUNCH for every time slot.')
     if (!Number.isSafeInteger(slot.sequence) || slot.sequence < 1) throw new HttpError(400, 'Time slot sequence must be a positive whole number.')
     if (!slotStatuses.has(slot.status)) throw new HttpError(400, 'Time slot status must be Active or Inactive.')
-    return { day: slot.day, start: slot.start, end: slot.end, type: slot.type, sequence: slot.sequence, status: slot.status }
+    return { id: slot.id, day: slot.day, start: slot.start, end: slot.end, type: slot.type, sequence: slot.sequence, status: slot.status }
   })
   const slotsByDay = new Map(dayOrder.map((day) => [day, []]))
   for (const slot of slots) slotsByDay.get(slot.day).push(slot)
@@ -764,12 +764,26 @@ export async function saveAcademicCalendar(database, user, input) {
   const timeSlots = validateCalendarSlots(input.timeSlots)
   await database.collection('working_days').updateMany({}, { $set: { enabled: false } })
   if (input.workingDays.length) await database.collection('working_days').updateMany({ day: { $in: input.workingDays } }, { $set: { enabled: true } })
-  await database.collection('time_slots').deleteMany({})
+  // Update existing slots in place (keeping their ids) so timetable entries that
+  // reference timeSlotId keep working; only add new and remove stale slots.
+  const existingSlots = await database.collection('time_slots').find({}).toArray()
+  const existingIds = new Set(existingSlots.map((slot) => slot.id))
+  const keptIds = new Set()
   const savedSlots = []
-  for (const slot of timeSlots) {
-    const id = await insertRecord(database, 'time_slots', slot)
-    savedSlots.push({ id, ...slot })
+  for (const { id: rawId, ...slot } of timeSlots) {
+    const parsedId = Number(rawId)
+    const keepId = Number.isSafeInteger(parsedId) && existingIds.has(parsedId) && !keptIds.has(parsedId) ? parsedId : null
+    if (keepId == null) {
+      const id = await insertRecord(database, 'time_slots', slot)
+      savedSlots.push({ id, ...slot })
+      continue
+    }
+    keptIds.add(keepId)
+    await database.collection('time_slots').updateOne({ id: keepId }, { $set: slot })
+    savedSlots.push({ id: keepId, ...slot })
   }
+  const staleIds = existingSlots.map((slot) => slot.id).filter((id) => !keptIds.has(id))
+  if (staleIds.length) await database.collection('time_slots').deleteMany({ id: { $in: staleIds } })
   const orderedWorkingDays = input.workingDays.sort((left, right) => dayOrder.indexOf(left) - dayOrder.indexOf(right))
   await writeAudit(database, { actorId: user.id, actorName: user.name, action: 'Updated institution calendar', target: 'Working days and time slots', details: `${orderedWorkingDays.length} working days, ${savedSlots.length} time slots` })
   return { workingDays: orderedWorkingDays, timeSlots: sortCalendarSlots(savedSlots) }

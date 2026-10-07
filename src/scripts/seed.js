@@ -1,10 +1,5 @@
 import { MongoClient } from 'mongodb'
-import crypto from 'crypto'
-
-function hashPassword(password) {
-  const salt = 'timetable-static-salt'
-  return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex')
-}
+import { hashPassword } from '../utils/passwords.js'
 
 const connectionString = process.env.MONGODB_URI
 if (!connectionString) {
@@ -175,7 +170,7 @@ async function seed() {
     [csDeptId, csProgId, 'Friday', '13:00', '14:30', 'AI & Machine Learning', 'CSC 401', users['turing@demo.edu'], rooms['AI & Robotics Lab'], 'Year 4 · Group A', 'Published'],
     [eeeDeptId, eeProgId, 'Monday', '08:30', '09:45', 'Circuit Analysis', 'EEE 201', users['adeyemi@demo.edu'], rooms['Engineering Lab'], 'Year 2 · Group A', 'Awaiting approval'],
     [eeeDeptId, eeProgId, 'Tuesday', '11:00', '12:15', 'Digital Signal Processing', 'EEE 304', users['nwosu@demo.edu'], rooms['Engineering Lab'], 'Year 3 · Group B', 'Draft'],
-    [busDeptId, mbaProgId, 'Wednesday', '09:30', '10:45', 'Strategic Management', 'BUS 501', users['okeke@demo.edu'], rooms['Room C104'], 'Year 1 · Group A', 'Awaiting approval'],
+    [busDeptId, mbaProgId, 'Wednesday', '09:30', '10:45', 'Strategic Management', 'BUS 501', users['okeke@demo.edu'], rooms['Lecture Hall B'], 'Year 1 · Group A', 'Awaiting approval'],
   ]
 
   for (const [departmentId, programId, day, start, end, subject, code, facultyId, roomId, cohort, status] of scheduleSeeds) {
@@ -207,6 +202,19 @@ async function seed() {
 
   await insert('audit_logs', { actorId: null, actorName: 'Academic Administrator', action: 'Published timetable', target: 'Computer Science', details: 'First Semester 2026/2027 timetable published successfully.' })
   await insert('audit_logs', { actorId: null, actorName: 'System', action: 'Seed execution', target: 'Database', details: 'Seeded fresh demo data for campuses, departments, users, programs, rooms, and schedules.' })
+
+  // Collections that survive a re-seed (change and leave requests) keep their old
+  // ids, so raise each id counter to at least the highest existing id. Without
+  // this, the next record created through the API would receive a duplicate id.
+  const wipeList = new Set(collections)
+  const persistedCollections = (await db.listCollections().toArray()).map((item) => item.name)
+    .filter((name) => name !== 'counters' && !wipeList.has(name))
+  for (const name of persistedCollections) {
+    const latest = await db.collection(name).find({ id: { $type: 'number' } }, { projection: { id: 1 } }).sort({ id: -1 }).limit(1).toArray()
+    if (latest.length) {
+      await db.collection('counters').updateOne({ _id: name }, { $max: { sequence: latest[0].id } }, { upsert: true })
+    }
+  }
 
   console.log('Database seeding completed successfully!')
   await client.close()

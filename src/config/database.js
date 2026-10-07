@@ -221,7 +221,14 @@ async function ensureFacultyProfiles(database) {
     if (!Array.isArray(item.sectionIds)) updates.sectionIds = []
     if (!Array.isArray(item.availableSlots)) {
       const days = String(item.availabilityDays || '').split(',').map((day) => day.trim()).filter(Boolean)
-      updates.availableSlots = days.flatMap((day) => timeSlots.map(({ start, end }) => ({ day, start, end })))
+      // time_slots stores one row per day, so the raw list repeats every period once per
+      // weekday. Deduplicate the periods before the cross join, otherwise each slot is
+      // emitted several times and the profile then fails the "slots must not overlap"
+      // validation, which locks the Faculty Management edit form.
+      const periods = [...new Map(
+        timeSlots.map((slot) => [`${slot.start}-${slot.end}`, { start: slot.start, end: slot.end }]),
+      ).values()]
+      updates.availableSlots = days.flatMap((day) => periods.map(({ start, end }) => ({ day, start, end })))
     }
     if (!Array.isArray(item.unavailableSlots)) updates.unavailableSlots = []
     if (!Array.isArray(item.preferredSlots)) updates.preferredSlots = []

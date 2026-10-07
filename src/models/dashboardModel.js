@@ -67,7 +67,8 @@ export async function getDashboardTimetable(database, user, requestedOffset = 0)
     dayIndex: index,
     classes: classesByDay.get(day),
   }))
-  const nextClass = todayClasses.find((item) => item.start > today.time)
+  const ongoingClass = todayClasses.find((item) => item.start <= today.time && item.end > today.time)
+  const nextClass = ongoingClass || todayClasses.find((item) => item.start > today.time)
 
   return {
     today: { date: today.date, day: today.day, label: today.label, classes: todayClasses },
@@ -77,7 +78,7 @@ export async function getDashboardTimetable(database, user, requestedOffset = 0)
     summary: {
       todayCount: todayClasses.length,
       weekCount: week.reduce((count, day) => count + day.classes.length, 0),
-      nextClass: nextClass ? { start: nextClass.start, course: nextClass.course } : null,
+      nextClass: nextClass ? { start: nextClass.start, end: nextClass.end, course: nextClass.course, live: nextClass === ongoingClass } : null,
     },
   }
 }

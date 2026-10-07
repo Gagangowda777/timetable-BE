@@ -32,6 +32,12 @@ function normalizeSlots(value, field) {
     }
     return { day, start, end }
   }).sort((left, right) => weekdays.indexOf(left.day) - weekdays.indexOf(right.day) || left.start.localeCompare(right.start))
+    // An exact repeat carries no extra meaning, so collapse it instead of letting it
+    // trip the overlap guard below. This keeps legacy profiles editable.
+    .filter((slot, index, list) => list[index - 1] === undefined
+      || list[index - 1].day !== slot.day
+      || list[index - 1].start !== slot.start
+      || list[index - 1].end !== slot.end)
   for (let index = 1; index < slots.length; index += 1) {
     if (slots[index - 1].day === slots[index].day && slots[index].start < slots[index - 1].end) {
       throw new HttpError(400, `${field} slots must not overlap.`)

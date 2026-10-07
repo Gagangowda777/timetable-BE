@@ -538,6 +538,36 @@ test('configures working days and ordered class, break, and lunch slots', async 
   assert.equal(denied.response.status, 403)
 })
 
+test('keeps existing time slot ids stable when the calendar is saved', async () => {
+  const academicAdmin = await signIn('academic.admin@demo.edu')
+  const original = await request('/admin/calendar', { token: academicAdmin.token })
+  assert.ok(original.data.timeSlots.length > 0)
+  const save = (timeSlots) => request('/admin/calendar', {
+    method: 'PUT', token: academicAdmin.token,
+    body: { workingDays: original.data.workingDays, timeSlots },
+  })
+
+  // Editing a saved slot keeps its id and persists the change.
+  const edited = original.data.timeSlots.map((slot, index) => index === 0 ? { ...slot, status: 'Inactive' } : slot)
+  const editedSave = await save(edited)
+  assert.equal(editedSave.response.status, 200)
+  assert.deepEqual(editedSave.data.timeSlots.map((slot) => slot.id), original.data.timeSlots.map((slot) => slot.id))
+  assert.equal(editedSave.data.timeSlots[0].status, 'Inactive')
+
+  // Slots without an id are inserted as new records; existing ids never move.
+  const withNew = [...edited, { day: 'Wednesday', start: '09:30', end: '10:30', type: 'CLASS', sequence: 2, status: 'Active' }]
+  const inserted = await save(withNew)
+  assert.equal(inserted.response.status, 200)
+  assert.equal(inserted.data.timeSlots.length, original.data.timeSlots.length + 1)
+  assert.deepEqual(inserted.data.timeSlots.slice(0, -1).map((slot) => slot.id), original.data.timeSlots.map((slot) => slot.id))
+  assert.ok(!original.data.timeSlots.some((slot) => slot.id === inserted.data.timeSlots.at(-1).id))
+
+  // Restoring the original payload removes the added slot and keeps every id.
+  const restored = await save(original.data.timeSlots)
+  assert.equal(restored.response.status, 200)
+  assert.deepEqual(restored.data, original.data)
+})
+
 test('creates, edits, moves, and deletes manual timetable entries', async () => {
   const departmentAdmin = await signIn('department.admin@demo.edu')
   const department = await database.collection('departments').findOne({ name: 'Computer Science' })
