@@ -12,6 +12,7 @@ import {
   updateSystemEntity,
 } from '../models/systemModel.js'
 import { createFaculty, deleteFaculty, getFaculty, getFacultyOptions, listFaculty, updateFaculty } from '../models/facultyModel.js'
+import { listRequestFormFields, saveRequestFormFields } from '../models/requestFormModel.js'
 
 function database(request) {
   return request.app.locals.database
@@ -80,4 +81,12 @@ export async function facultyUpdate(request, response) {
 
 export async function facultyDelete(request, response) {
   response.json(await deleteFaculty(database(request), request.user, request.params.id))
+}
+
+export async function requestFormFields(request, response) {
+  response.json(await listRequestFormFields(database(request)))
+}
+
+export async function updateRequestFormFields(request, response) {
+  response.json(await saveRequestFormFields(database(request), request.user, request.body))
 }

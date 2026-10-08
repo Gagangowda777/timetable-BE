@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb'
 import { hashPassword } from '../utils/passwords.js'
+import { ensureRequestFormFields } from '../models/requestFormModel.js'
 
 const uri = process.env.MONGODB_URI
 let client
@@ -146,6 +147,7 @@ export async function initializeDatabase(database) {
     database.collection('users').createIndex({ role: 1, 'availableSlots.day': 1 }),
     database.collection('users').createIndex({ role: 1, 'unavailableSlots.day': 1 }),
     database.collection('time_slots').createIndex({ day: 1, sequence: 1, status: 1 }),
+    database.collection('request_form_fields').createIndex({ form: 1, order: 1 }),
     database.collection('timetable_versions').createIndex({ academicYearId: 1, departmentId: 1, programId: 1, batchId: 1, semesterId: 1, sectionId: 1, versionNumber: 1 }, { unique: true }),
     database.collection('batches').createIndex({ academicYearId: 1, programId: 1, code: 1 }, { unique: true }),
     database.collection('semesters').createIndex({ batchId: 1, name: 1 }, { unique: true }),
@@ -157,6 +159,7 @@ export async function initializeDatabase(database) {
   await ensureFacultyProfiles(database)
   await ensureTimeSlots(database)
   await ensureManualTimetableStructure(database)
+  await ensureRequestFormFields(database)
   return database
 }
 

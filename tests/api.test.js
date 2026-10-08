@@ -1343,3 +1343,64 @@ test('manages subjects end-to-end with academic and faculty validation', async (
   assert.equal((await request(`/system/semesters/${otherSemester.data.record.id}`, { method: 'DELETE', token: superAdmin.token })).data.deleted, true)
   assert.equal((await request(`/system/batches/${otherBatch.data.record.id}`, { method: 'DELETE', token: superAdmin.token })).data.deleted, true)
 })
+
+test('lets a super admin add and remove faculty request form fields', async () => {
+  const superAdmin = await signIn('super.admin@demo.edu')
+  const faculty = await signIn('faculty@demo.edu')
+  const student = await signIn('student@demo.edu')
+
+  const denied = await request('/system/request-form-fields', { token: student.token })
+  assert.equal(denied.response.status, 403)
+
+  const initial = await request('/system/request-form-fields', { token: superAdmin.token })
+  assert.equal(initial.response.status, 200)
+  assert.deepEqual(initial.data.change.map((field) => field.key), ['scheduleId', 'proposedChange', 'reason'])
+  assert.deepEqual(initial.data.leave.map((field) => field.key), ['leaveType', 'startDate', 'endDate', 'reason'])
+  assert.equal(initial.data.change[0].locked, true)
+  assert.equal(initial.data.leave[0].type, 'select')
+
+  const trimmedChange = initial.data.change
+    .filter((field) => field.key !== 'reason')
+    .map(({ id, label, type, required, placeholder, options }) => ({ id, label, type, required, placeholder, options }))
+  trimmedChange.push({ label: 'Preferred day', type: 'select', required: true, options: ['Monday', 'Friday'] })
+  const saved = await request('/system/request-form-fields', {
+    method: 'PUT', token: superAdmin.token, body: { form: 'change', fields: trimmedChange },
+  })
+  assert.equal(saved.response.status, 200)
+  assert.deepEqual(saved.data.change.map((field) => field.label), ['Assigned class or lab', 'Requested change', 'Preferred day'])
+  assert.equal(saved.data.change[2].key, 'custom_preferred_day')
+
+  const removingLocked = await request('/system/request-form-fields', {
+    method: 'PUT',
+    token: superAdmin.token,
+    body: { form: 'change', fields: [{ id: saved.data.change[1].id, label: 'Requested change', type: 'textarea', required: true }] },
+  })
+  assert.equal(removingLocked.response.status, 400)
+  const unchanged = await request('/system/request-form-fields', { token: superAdmin.token })
+  assert.deepEqual(unchanged.data.change.map((field) => field.key), ['scheduleId', 'proposedChange', 'custom_preferred_day'])
+
+  const facultyFields = await request('/dashboard/request-form-fields', { token: faculty.token })
+  assert.equal(facultyFields.response.status, 200)
+  assert.deepEqual(facultyFields.data.change.map((field) => field.key), ['scheduleId', 'proposedChange', 'custom_preferred_day'])
+
+  const schedule = await database.collection('schedules').findOne({ facultyId: faculty.user.id, status: 'Published' })
+  const submitted = await request('/dashboard/change-requests', {
+    method: 'POST',
+    token: faculty.token,
+    body: { scheduleId: schedule.id, proposedChange: 'Move to Friday', custom_preferred_day: 'Friday' },
+  })
+  assert.equal(submitted.response.status, 201)
+  assert.deepEqual(submitted.data.customFields, [{ key: 'custom_preferred_day', label: 'Preferred day', value: 'Friday' }])
+
+  const missingChoice = await request('/dashboard/change-requests', {
+    method: 'POST', token: faculty.token, body: { scheduleId: schedule.id, proposedChange: 'Move to Friday' },
+  })
+  assert.equal(missingChoice.response.status, 400)
+
+  const restored = await request('/system/request-form-fields', {
+    method: 'PUT', token: superAdmin.token, body: { form: 'change', restoreDefaults: true },
+  })
+  assert.equal(restored.response.status, 200)
+  assert.deepEqual(restored.data.change.map((field) => field.key), ['scheduleId', 'proposedChange', 'reason'])
+  assert.equal(restored.data.change[0].type, 'class')
+})

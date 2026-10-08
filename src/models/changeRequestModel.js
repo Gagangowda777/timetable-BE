@@ -1,17 +1,25 @@
 import { HttpError } from '../utils/httpError.js'
 import { writeAudit } from './auditModel.js'
 import { insertRecord } from './dataHelpers.js'
+import { collectCustomValues, getRequestFormConfig } from './requestFormModel.js'
 
 export async function createFacultyChangeRequest(database, user, input) {
+  const config = await getRequestFormConfig(database, 'change')
+  // A field only has to be filled in when the super admin left it on the form as required.
+  const isRequired = (key, fallback) => (config.isLegacy ? fallback : Boolean(config.byKey.get(key)?.required))
   const scheduleId = Number(input.scheduleId)
   const proposedChange = typeof input.proposedChange === 'string' ? input.proposedChange.trim() : ''
   const reason = typeof input.reason === 'string' ? input.reason.trim() : ''
-  if (!Number.isInteger(scheduleId) || !proposedChange || !reason) {
+  if (!Number.isInteger(scheduleId) || scheduleId < 1) {
+    throw new HttpError(400, 'Choose a class and describe the requested change and reason.')
+  }
+  if ((isRequired('proposedChange', true) && !proposedChange) || (isRequired('reason', true) && !reason)) {
     throw new HttpError(400, 'Choose a class and describe the requested change and reason.')
   }
   if (proposedChange.length > 1000 || reason.length > 1000) {
     throw new HttpError(400, 'Change details and reason must be 1000 characters or fewer.')
   }
+  const customFields = collectCustomValues(config, input)
 
   const schedule = await database.collection('schedules').findOne({
     id: scheduleId, facultyId: user.id, status: 'Published',
@@ -30,6 +38,7 @@ export async function createFacultyChangeRequest(database, user, input) {
     end: schedule.end,
     proposedChange,
     reason,
+    customFields,
     status: 'Pending',
   })
   return database.collection('change_requests').findOne({ id })

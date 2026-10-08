@@ -3,6 +3,7 @@ import { getStudentNotifications } from '../models/notificationsModel.js'
 import { createFacultyChangeRequest, getFacultyChangeRequests } from '../models/changeRequestModel.js'
 import { getFacultyWorkload } from '../models/workloadModel.js'
 import { createFacultyLeaveRequest, getFacultyLeaveRequests } from '../models/leaveRequestModel.js'
+import { getFacultyRequestFormFields } from '../models/requestFormModel.js'
 
 export async function timetable(request, response) {
   const data = await getDashboardTimetable(request.app.locals.database, request.user, request.query.weekOffset)
@@ -33,4 +34,8 @@ export async function facultyLeaveRequests(request, response) {
 export async function createFacultyLeave(request, response) {
   const leaveRequest = await createFacultyLeaveRequest(request.app.locals.database, request.user, request.body)
   response.status(201).json(leaveRequest)
+}
+
+export async function requestFormFields(request, response) {
+  response.json(await getFacultyRequestFormFields(request.app.locals.database))
 }

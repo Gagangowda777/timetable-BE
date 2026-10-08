@@ -14,7 +14,9 @@ import {
   facultyList,
   facultyUpdate,
   overview,
+  requestFormFields,
   settings,
+  updateRequestFormFields,
   updateSettings,
 } from '../controllers/systemController.js'
 import { authenticate, authorize } from '../middleware/authMiddleware.js'
@@ -32,6 +34,8 @@ router.post('/faculty', facultyCreate)
 router.get('/faculty/:id', facultyGet)
 router.patch('/faculty/:id', facultyUpdate)
 router.delete('/faculty/:id', facultyDelete)
+router.get('/request-form-fields', requestFormFields)
+router.put('/request-form-fields', updateRequestFormFields)
 router.get('/:entity', entityList)
 router.post('/:entity', entityCreate)
 router.get('/:entity/:id', entityGet)
