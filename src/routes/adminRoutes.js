@@ -21,6 +21,8 @@ import {
   updateScheduleStatus,
   facultyWorkloadReport,
   facultyWorkloadDetails,
+  leaveRequests,
+  reviewLeaveRequest,
 } from '../controllers/adminController.js'
 import { authenticate, authorize } from '../middleware/authMiddleware.js'
 
@@ -32,6 +34,8 @@ router.post('/schedules', createSchedule)
 router.patch('/schedules/status', updateScheduleStatus)
 router.get('/change-requests', changeRequests)
 router.patch('/change-requests/:id', reviewChangeRequest)
+router.get('/leave-requests', leaveRequests)
+router.patch('/leave-requests/:id', reviewLeaveRequest)
 router.patch('/faculty/:id/availability', updateFacultyAvailability)
 router.get('/faculty-workload', facultyWorkloadReport)
 router.get('/faculty/:id/workload', facultyWorkloadDetails)

@@ -263,6 +263,36 @@ test('allows faculty to request leave and view their own requests', async () => 
   assert.equal(denied.response.status, 403)
 })
 
+test('lets admins review faculty leave requests in their department', async () => {
+  const faculty = await signIn('faculty@demo.edu')
+  const submitted = await request('/dashboard/leave-requests', {
+    method: 'POST',
+    token: faculty.token,
+    body: { leaveType: 'Sick Leave', startDate: '2026-05-04', endDate: '2026-05-05', reason: 'Medical review' },
+  })
+  assert.equal(submitted.response.status, 201)
+
+  const student = await signIn('student@demo.edu')
+  const denied = await request('/admin/leave-requests', { token: student.token })
+  assert.equal(denied.response.status, 403)
+
+  const departmentAdmin = await signIn('department.admin@demo.edu')
+  const adminRequests = await request('/admin/leave-requests', { token: departmentAdmin.token })
+  assert.ok(adminRequests.data.some((item) => item.id === submitted.data.id))
+
+  const reviewed = await request(`/admin/leave-requests/${submitted.data.id}`, {
+    method: 'PATCH', token: departmentAdmin.token, body: { status: 'Approved' },
+  })
+  assert.equal(reviewed.response.status, 200)
+  assert.equal(reviewed.data.status, 'Approved')
+  assert.equal(reviewed.data.reviewedBy, 'Department Administrator')
+
+  const repeated = await request(`/admin/leave-requests/${submitted.data.id}`, {
+    method: 'PATCH', token: departmentAdmin.token, body: { status: 'Declined' },
+  })
+  assert.equal(repeated.response.status, 409)
+})
+
 test('creates a conflict-free schedule and enforces approval transitions', async () => {
   const student = await signIn('student@demo.edu')
   const departmentAdmin = await signIn('department.admin@demo.edu')

@@ -102,47 +102,10 @@ async function collectFixOptions(database, conflict, targets) {
   return options
 }
 
-// Optional AI assist: when AI_API_KEY is set, an OpenAI-compatible model ranks the
-// already-validated fixes. It can only choose among options our validator approved, and a
-// missing or failed AI call falls back to the first valid fix.
-async function rankOptionsWithAI(conflict, options) {
-  const apiKey = process.env.AI_API_KEY
-  if (!apiKey || options.length < 2) return null
-  const baseUrl = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
-  const model = process.env.AI_MODEL || 'gpt-4o-mini'
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You assist university timetable coordinators. Reply only with JSON {"index": number, "rationale": string}.' },
-          {
-            role: 'user',
-            content: `Conflict: ${conflict.type} on ${conflict.day} ${conflict.start}–${conflict.end} (${conflict.detail || ''})\n`
-              + `Validated fix options:\n${options.map((option, index) => `${index}: ${option.message}`).join('\n')}\n`
-              + 'Pick the index (0-based) of the best fix for minimal disruption and give a rationale of at most 15 words.',
-          },
-        ],
-      }),
-    })
-    if (!response.ok) return null
-    const data = await response.json()
-    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}')
-    const index = Number(parsed.index)
-    if (!Number.isInteger(index) || index < 0 || index >= options.length) return null
-    return { index, rationale: String(parsed.rationale || '').slice(0, 160) }
-  } catch {
-    return null
-  } finally {
-    clearTimeout(timer)
-  }
+// Picks the lowest-disruption already-validated fix. Options are produced in priority
+// order (same campus room, same day and length, then same department faculty).
+function pickFix(options) {
+  return options[0]
 }
 
 export async function resolveScheduleConflict(database, user, conflictId) {
@@ -192,10 +155,9 @@ export async function resolveScheduleConflict(database, user, conflictId) {
       if (!options.length) {
         throw new HttpError(409, 'No safe automatic fix was found for this conflict. Adjust the affected class manually, then resolve it.')
       }
-      const pick = await rankOptionsWithAI(conflict, options)
-      const chosen = options[pick?.index] || options[0]
+      const chosen = pickFix(options)
       await database.collection('schedules').updateOne(byId(chosen.scheduleId), { $set: chosen.patch })
-      message = chosen.message + (pick ? ` AI assist: ${pick.rationale}` : '')
+      message = chosen.message
       autoFixed = true
       action = chosen.action
     }

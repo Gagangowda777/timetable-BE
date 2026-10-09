@@ -68,3 +68,34 @@ export async function createFacultyLeaveRequest(database, user, input) {
 export async function getFacultyLeaveRequests(database, user) {
   return database.collection('leave_requests').find({ facultyId: user.id }).sort({ createdAt: -1 }).toArray()
 }
+
+export async function getAdminLeaveRequests(database, user) {
+  const filter = user.role === 'department-admin' ? { departmentId: user.departmentId } : {}
+  return database.collection('leave_requests').find(filter).sort({ createdAt: -1 }).toArray()
+}
+
+export async function reviewFacultyLeaveRequest(database, user, requestId, status) {
+  if (!['Approved', 'Declined'].includes(status)) {
+    throw new HttpError(400, 'Choose Approved or Declined as the review outcome.')
+  }
+
+  const id = Number(requestId)
+  const leaveRequest = await database.collection('leave_requests').findOne({ id })
+  if (!leaveRequest) throw new HttpError(404, 'Leave request not found.')
+  if (user.role === 'department-admin' && leaveRequest.departmentId !== user.departmentId) {
+    throw new HttpError(403, 'You can only review requests from your department.')
+  }
+  if (leaveRequest.status !== 'Pending') throw new HttpError(409, 'This leave request has already been reviewed.')
+
+  await database.collection('leave_requests').updateOne({ id, status: 'Pending' }, {
+    $set: { status, reviewedBy: user.name, reviewedAt: new Date() },
+  })
+  await writeAudit(database, {
+    actorId: user.id,
+    actorName: user.name,
+    action: `${status.toLowerCase()} faculty leave request`,
+    target: `${leaveRequest.facultyName} · ${leaveRequest.leaveType}`,
+    details: leaveRequest.reason,
+  })
+  return database.collection('leave_requests').findOne({ id })
+}

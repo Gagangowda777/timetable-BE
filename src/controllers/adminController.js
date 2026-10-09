@@ -16,6 +16,7 @@ import {
   setScheduleStatus,
 } from '../models/adminModel.js'
 import { getAdminChangeRequests, reviewFacultyChangeRequest } from '../models/changeRequestModel.js'
+import { getAdminLeaveRequests, reviewFacultyLeaveRequest } from '../models/leaveRequestModel.js'
 import { generateManualTimetable } from '../services/timetableGenerationService.js'
 import { resolveScheduleConflict } from '../services/conflictResolutionService.js'
 import { getFacultyWorkload, getFacultyWorkloadReport } from '../models/workloadModel.js'
@@ -103,6 +104,19 @@ export async function changeRequests(request, response) {
 
 export async function reviewChangeRequest(request, response) {
   response.json(await reviewFacultyChangeRequest(
+    request.app.locals.database,
+    request.user,
+    request.params.id,
+    request.body.status,
+  ))
+}
+
+export async function leaveRequests(request, response) {
+  response.json(await getAdminLeaveRequests(request.app.locals.database, request.user))
+}
+
+export async function reviewLeaveRequest(request, response) {
+  response.json(await reviewFacultyLeaveRequest(
     request.app.locals.database,
     request.user,
     request.params.id,
